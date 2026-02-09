@@ -109,6 +109,7 @@ def count_soft_penalty(schedule: List[int], enrollment: List[List[int]]) -> int:
 
 """
     Fitness score:
+    - Goal is minimal cost score (lower = better)
     - Hard violations are heavily penalized
     - Soft penalty is added
 
@@ -127,7 +128,7 @@ def evaluate_fitness(schedule: List[int], enrollment: List[List[int]]) -> int:
 
 """
     Tournament selection:
-    - pick 'size' random schedules
+    - pick 'tournament size' random schedules
     - return the best one (lowest fitness)
 """
 def tournament_select(population: List[List[int]], enrollment: List[List[int]], tournamentSize: int =3) -> List[int]:
@@ -158,8 +159,10 @@ def one_point_crossover(parent1: List[int], parent2: List[int]) -> List[int]:
     
     #add parent1 From start up to but not including index
     #to parent2 from index to the end
-    child = parent1[:index] + parent2[index:]
-    return child
+    # should we not return two children i.e. both mutations of the parents*
+    child1 = parent1[:index] + parent2[index:]
+   # child2 = parent1[index:] + parent2[:index]
+    return child1  #, child2
 
 """
     This function mutates the schedual, assiging a random slot with x porbability
@@ -262,6 +265,7 @@ def run_island_ga(
     crossoverRate: float = 0.8,
     mutationRate: float = 0.05,
     tournamentSize: int = 3,
+    migrationInterval: int = 10,
     migrantsPerIsland: int = 1,
 ) -> Tuple[List[int], int, List[int]]:
 
@@ -314,7 +318,7 @@ def run_island_ga(
     Main function
 """
 def main():
-    fileName = "tinyexample.txt"
+    fileName = "test_case1.txt"
     N, K, _, enrollment = read_file(fileName)
 
     # Run island model GA
@@ -324,7 +328,7 @@ def main():
         enrollment=enrollment,
         totalPopulationSize=40,
         numberOfIslands=4,
-        generations=100,
+        generations=50,
         crossoverRate=0.9,
         mutationRate=0.10,
         tournamentSize=3,
