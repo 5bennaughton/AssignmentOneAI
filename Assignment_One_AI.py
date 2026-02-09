@@ -5,8 +5,8 @@ from typing import List, Tuple
     Reads the timetable file and puts it into the correct readable format
     First line: N (number of exams), K (number of slots), M (number of students)
 '''
-def read_file(filename: str) -> Tuple[int, int, int, List[List[int]]]:
-    with open(filename, "r") as timeTable:
+def read_file(fileName: str) -> Tuple[int, int, int, List[List[int]]]:
+    with open(fileName, "r") as timeTable:
         lines = [];
 
         for line in timeTable:
@@ -35,10 +35,10 @@ def read_file(filename: str) -> Tuple[int, int, int, List[List[int]]]:
     Taking in N, K and the population size as a parameter
     Population size is the amount of random schedules needed to create
 '''
-def initialize_population(population_size: int, N: int, K: int) -> List[List[int]]:
+def initialize_population(populationSize: int, N: int, K: int) -> List[List[int]]:
     population = [];
 
-    for x in range(population_size):
+    for x in range(populationSize):
         schedule = []
 
         for y in range(N):
@@ -56,14 +56,14 @@ def count_hard_violations(schedule: List[int], enrollment: List[List[int]]) -> i
     violations = 0;
 
     # For each student
-    for student_row in enrollment:
+    for studentRow in enrollment:
 
         # Collect the slots for exams this student takes
         slots = [];
 
-        for exam_index, takes_exam in enumerate(student_row):
-            if takes_exam == 1:
-                slots.append(schedule[exam_index]);
+        for examIndex, takesExam in enumerate(studentRow):
+            if takesExam == 1:
+                slots.append(schedule[examIndex]);
 
         # If any slot repeats, that's a conflict
         # Count how many times each slot appears
@@ -91,12 +91,12 @@ def count_hard_violations(schedule: List[int], enrollment: List[List[int]]) -> i
 def count_soft_penalty(schedule: List[int], enrollment: List[List[int]]) -> int:
     penalty = 0
 
-    for student_row in enrollment:
+    for studentRow in enrollment:
         slots = []
 
-        for exam_index, takes_exam in enumerate(student_row):
-            if takes_exam == 1:
-                slots.append(schedule[exam_index])
+        for examIndex, takesExam in enumerate(studentRow):
+            if takesExam == 1:
+                slots.append(schedule[examIndex])
 
         slots.sort()
 
@@ -130,17 +130,17 @@ def evaluate_fitness(schedule: List[int], enrollment: List[List[int]]) -> int:
     - pick 'size' random schedules
     - return the best one (lowest fitness)
 """
-def tournament_select(population: List[List[int]], enrollment: List[List[int]], size: int =3) -> List[int]:
-    candidates = random.sample(population, size)
+def tournament_select(population: List[List[int]], enrollment: List[List[int]], tournamentSize: int =3) -> List[int]:
+    candidates = random.sample(population, tournamentSize)
 
     best = candidates[0]
-    best_fit = evaluate_fitness(best, enrollment)
+    bestFitness = evaluate_fitness(best, enrollment)
 
-    for c in candidates:
-        fit = evaluate_fitness(c, enrollment)
-        if best is None or fit < best_fit:
-            best = c
-            best_fit = fit
+    for candidate in candidates:
+        fitness = evaluate_fitness(candidate, enrollment)
+        if best is None or fitness < bestFitness:
+            best = candidate
+            bestFitness = fitness
 
     # This is returning a copy of the best, instead of the orginal list
     return best[:]  
@@ -165,115 +165,177 @@ def one_point_crossover(parent1: List[int], parent2: List[int]) -> List[int]:
     This function mutates the schedual, assiging a random slot with x porbability
     This can help stop the algo from getting stuck
 """
-def mutate(schedule: List[int], K: int, mutation_rate: float) -> List[int]:
+def mutate(schedule: List[int], K: int, mutationRate: float) -> List[int]:
     for i in range(len(schedule)):
-        if random.random() < mutation_rate:
+        if random.random() < mutationRate:
             schedule[i] = random.randint(1, K)
 
     return schedule
 
 
 """
-    Run the genetic algorithm.
-
-    Returns:
-    best_schedule, best_fitness, best_hard, best_soft, best_fitness_over_time
+    Run one GA generation for a single population.
 """
-def run_ga(
+def evolve_population_once(
+    population: List[List[int]],
+    enrollment: List[List[int]],
+    K: int,
+    crossoverRate: float,
+    mutationRate: float,
+    tournamentSize: int,
+) -> List[List[int]]:
+    
+    newPopulation = []
+
+    while len(newPopulation) < len(population):
+        if len(population) == 1:
+            child = population[0][:]
+
+        else:
+            localTournamentSize = min(tournamentSize, len(population))
+            p1 = tournament_select(population, enrollment, localTournamentSize)
+            p2 = tournament_select(population, enrollment, localTournamentSize)
+
+            if random.random() < crossoverRate:
+                child = one_point_crossover(p1, p2)
+            else:
+                child = p1[:]
+
+        mutate(child, K, mutationRate)
+        newPopulation.append(child)
+
+    return newPopulation
+
+
+"""
+    Island migration:
+    - picks a random migrant from each island
+    - picks a random schudle from each island to replace with the migrant
+"""
+def migrate_islands_ring(
+    islands: List[List[List[int]]],
+    migrantsPerIsland: int,
+) -> None:
+    outgoing = []
+
+    # Building migrants for each island
+    for sourcePopulation in islands:
+        # Send no more migrants that island has
+        moves = min(migrantsPerIsland, len(sourcePopulation))
+
+        migrants = []
+        for x in range(moves):
+            # Picks a random schedule from the island
+            pickedSchedule = random.choice(sourcePopulation)
+            migrants.append(pickedSchedule[:])
+
+        outgoing.append(migrants)
+
+    # Here we send a migrant to the next island
+    for islandNumber, migrants in enumerate(outgoing):
+        # This sends a migrant from each island to the next island, and the last island wraps back to the first island
+        nextIsland = (islandNumber + 1) % len(islands)
+        targetPopulation = islands[nextIsland]
+
+        moves = min(len(migrants), len(targetPopulation))
+
+        
+        for migrant in migrants[:moves]:
+            # Picks random schduale in an island and replaces it with the migrant
+            replaceSchedule = random.randrange(len(targetPopulation))
+            targetPopulation[replaceSchedule] = migrant
+
+
+"""
+     island-model GA:
+    - split all the population into multiple islands
+    - evolve each island by its own using the @evolve_population_once function
+    - Use the @migrate_islands_ring function to migrate random schedules to the next island from each island
+"""
+def run_island_ga(
     N: int,
     K: int,
     enrollment: List[List[int]],
-    pop_size: int = 20,
+    totalPopulationSize: int = 40,
+    numberOfIslands: int = 4,
     generations: int = 50,
-    crossover_rate: float = 0.8,
-    mutation_rate: float = 0.05,
-    tournament_size: int = 3,
+    crossoverRate: float = 0.8,
+    mutationRate: float = 0.05,
+    tournamentSize: int = 3,
+    migrantsPerIsland: int = 1,
 ) -> Tuple[List[int], int, List[int]]:
- 
-    # Create initial population
-    population = initialize_population(pop_size, N, K)
 
-    # Track best fitness each generation 
-    best_fitness_over_time = []
-    best_schedule = None
-    best_fitness = None
+    # Split total population as evenly as possible across islands
+    islandSize = totalPopulationSize // numberOfIslands
+    islands = []
 
-    # Evolution loop
-    for x in range(generations):
-        new_population = []
+    for x in range(numberOfIslands):
+        islands.append(initialize_population(islandSize, N, K))
 
-        # Evaluate current population best
-        for s in population:
-            fitness = evaluate_fitness(s, enrollment)
-            if best_schedule is None or fitness < best_fitness:
-                best_schedule = s[:]
-                best_fitness = fitness
-   
-        # Populate this array with all of the new best_fitnesses
-        best_fitness_over_time.append(best_fitness)
+    bestSchedule = None
+    bestFitness = None
 
-        # Print out the best fitness and schedual with it for each iteration
-        print(f"Generation {x + 1}: Best fitness = {best_fitness} | Best schedule = {best_schedule}")
 
-        # Make next generation
-        while len(new_population) < pop_size:
-            # parents
-            p1 = tournament_select(population, enrollment, tournament_size)
-            p2 = tournament_select(population, enrollment, tournament_size)
+    for generation in range(generations):
+        # Evolve each island one generation
+        for islandIndex in range(numberOfIslands):
+            islands[islandIndex] = evolve_population_once(
+                population=islands[islandIndex],
+                enrollment=enrollment,
+                K=K,
+                crossoverRate=crossoverRate,
+                mutationRate=mutationRate,
+                tournamentSize=tournamentSize,
+            )
 
-            # Crossover
-            if random.random() < crossover_rate:
-                child = one_point_crossover(p1, p2)
-            else:
-                child = p1[:]  
+            # Migrate the islands
+            migrate_islands_ring(
+                islands=islands,
+                migrantsPerIsland=migrantsPerIsland,
+            )
 
-            # Mutation
-            mutate(child, K, mutation_rate)
-            new_population.append(child)
+        # Track the best
+        for population in islands:
+            for schedule in population:
+                fitness = evaluate_fitness(schedule, enrollment)
 
-        population = new_population
+                if bestSchedule is None or fitness < bestFitness:
+                    bestSchedule = schedule[:]
+                    bestFitness = fitness
 
-    return best_schedule, best_fitness, best_fitness_over_time
+        print(
+            f"Generation {generation + 1}: "
+            f"Best fitness = {bestFitness} | Best schedule = {bestSchedule}"
+        )
+
+    return bestSchedule, bestFitness
 
 """
-    Basic main function
+    Main function
 """
 def main():
-    
-    filename = "tinyexample.txt"
+    fileName = "tinyexample.txt"
+    N, K, _, enrollment = read_file(fileName)
 
-    try:
-        N, K, M, enrollment = read_file(filename)
-    except FileNotFoundError:
-        # if trys fail, this will be the timetable example
-        N = 4
-        K = 3
-        M = 5
-        enrollment = [
-            [1, 1, 0, 0],
-            [0, 1, 1, 0],
-            [0, 0, 1, 1],
-            [1, 0, 0, 1],
-            [0, 1, 0, 1],
-        ]
-        print("File not found")
-
-    # Run GA with very small parameters
-    best_schedule, best_fitness, history = run_ga(
+    # Run island model GA
+    bestSchedule, bestFitness = run_island_ga(
         N=N,
         K=K,
         enrollment=enrollment,
-        pop_size=20,
-        generations=50,
-        crossover_rate=0.8,
-        mutation_rate=0.05,
-        tournament_size=3,
+        totalPopulationSize=40,
+        numberOfIslands=4,
+        generations=100,
+        crossoverRate=0.9,
+        mutationRate=0.10,
+        tournamentSize=3,
+        migrationInterval=10,
+        migrantsPerIsland=1,
     )
 
-    print("\nBest schedule:", best_schedule)
-    print("Best fitness:", best_fitness)
-    print("Hard violations:", count_hard_violations(best_schedule, enrollment))
-    print("Soft penalty:", count_soft_penalty(best_schedule, enrollment))
+    print("\nBest schedule:", bestSchedule)
+    print("Best fitness:", bestFitness)
+    print("Hard violations:", count_hard_violations(bestSchedule, enrollment))
+    print("Soft penalty:", count_soft_penalty(bestSchedule, enrollment))
 
 
 if __name__ == "__main__":
