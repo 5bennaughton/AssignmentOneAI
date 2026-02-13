@@ -1,5 +1,6 @@
 import random
 from typing import List, Tuple
+import matplotlib.pyplot as plt
 
 '''
     Reads the timetable file and puts it into the correct readable format
@@ -161,7 +162,7 @@ def one_point_crossover(parent1: List[int], parent2: List[int]) -> List[int]:
     #to parent2 from index to the end
     # should we not return two children i.e. both mutations of the parents*
     child1 = parent1[:index] + parent2[index:]
-   # child2 = parent1[index:] + parent2[:index]
+   # e.g child2 = parent1[index:] + parent2[:index]
     return child1  #, child2
 
 """
@@ -188,22 +189,24 @@ def evolve_population_once(
     tournamentSize: int,
 ) -> List[List[int]]:
     
+    # creating next generation 
     newPopulation = []
 
+    # add children until new population is same size as the old
     while len(newPopulation) < len(population):
-        if len(population) == 1:
-            child = population[0][:]
 
+        # apply tournament selection to pick two parents
+        localTournamentSize = min(tournamentSize, len(population))
+        p1 = tournament_select(population, enrollment, localTournamentSize)
+        p2 = tournament_select(population, enrollment, localTournamentSize)
+
+        # randomise crossover occurance based on crossover rate
+        if random.random() < crossoverRate:
+            child = one_point_crossover(p1, p2)
         else:
-            localTournamentSize = min(tournamentSize, len(population))
-            p1 = tournament_select(population, enrollment, localTournamentSize)
-            p2 = tournament_select(population, enrollment, localTournamentSize)
+            child = p1[:]
 
-            if random.random() < crossoverRate:
-                child = one_point_crossover(p1, p2)
-            else:
-                child = p1[:]
-
+        # apply mutation to child based on mutation rate and add to new population
         mutate(child, K, mutationRate)
         newPopulation.append(child)
 
@@ -219,16 +222,21 @@ def migrate_islands_ring(
     islands: List[List[List[int]]],
     migrantsPerIsland: int,
 ) -> None:
+    
+    # collection of migrant lists (e.g. migrants_island1, migrants_island2, etc)
     outgoing = []
 
     # Building migrants for each island
     for sourcePopulation in islands:
-        # Send no more migrants that island has
+
+        # dont send more migrants than the island has
         moves = min(migrantsPerIsland, len(sourcePopulation))
 
+        # list of schedules leaving from a given island
         migrants = []
+
         for x in range(moves):
-            # Picks a random schedule from the island
+            # Picks a random schedule from the island for migration
             pickedSchedule = random.choice(sourcePopulation)
             migrants.append(pickedSchedule[:])
 
@@ -236,13 +244,12 @@ def migrate_islands_ring(
 
     # Here we send a migrant to the next island
     for islandNumber, migrants in enumerate(outgoing):
-        # This sends a migrant from each island to the next island, and the last island wraps back to the first island
+        # This sends a migrant from each island to the next island, and the last island wraps back to the first island (using mod func)
         nextIsland = (islandNumber + 1) % len(islands)
         targetPopulation = islands[nextIsland]
 
         moves = min(len(migrants), len(targetPopulation))
 
-        
         for migrant in migrants[:moves]:
             # Picks random schduale in an island and replaces it with the migrant
             replaceSchedule = random.randrange(len(targetPopulation))
@@ -271,6 +278,8 @@ def run_island_ga(
 
     # Split total population as evenly as possible across islands
     islandSize = totalPopulationSize // numberOfIslands
+    if islandSize < 2:
+        raise ValueError("Islands must have at least 2 schedules to evolve")
     islands = []
 
     for x in range(numberOfIslands):
@@ -279,6 +288,7 @@ def run_island_ga(
     bestSchedule = None
     bestFitness = None
 
+    bestHistory = []
 
     for generation in range(generations):
         # Evolve each island one generation
@@ -298,6 +308,7 @@ def run_island_ga(
                 migrantsPerIsland=migrantsPerIsland,
             )
 
+
         # Track the best
         for population in islands:
             for schedule in population:
@@ -307,30 +318,32 @@ def run_island_ga(
                     bestSchedule = schedule[:]
                     bestFitness = fitness
 
+        bestHistory.append(bestFitness)
+
         print(
             f"Generation {generation + 1}: "
             f"Best fitness = {bestFitness} | Best schedule = {bestSchedule}"
         )
 
-    return bestSchedule, bestFitness
+    return bestSchedule, bestFitness, bestHistory
 
 """
     Main function
 """
 def main():
-    fileName = "test_case1.txt"
+    fileName = "small-2.txt"
     N, K, _, enrollment = read_file(fileName)
 
     # Run island model GA
-    bestSchedule, bestFitness = run_island_ga(
+    bestSchedule, bestFitness, bestHistory = run_island_ga(
         N=N,
         K=K,
         enrollment=enrollment,
         totalPopulationSize=40,
         numberOfIslands=4,
-        generations=50,
+        generations=150,
         crossoverRate=0.9,
-        mutationRate=0.10,
+        mutationRate=0.1,
         tournamentSize=3,
         migrationInterval=10,
         migrantsPerIsland=1,
@@ -340,6 +353,13 @@ def main():
     print("Best fitness:", bestFitness)
     print("Hard violations:", count_hard_violations(bestSchedule, enrollment))
     print("Soft penalty:", count_soft_penalty(bestSchedule, enrollment))
+
+    plt.plot(range(1, len(bestHistory) + 1), bestHistory)
+    plt.xlabel("Generation")
+    plt.ylabel("Best fitness")
+    plt.title("Fitness over generations")
+    plt.grid(True)
+    plt.show()
 
 
 if __name__ == "__main__":
