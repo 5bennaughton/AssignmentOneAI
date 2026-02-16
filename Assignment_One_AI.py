@@ -187,12 +187,29 @@ def evolve_population_once(
     crossoverRate: float,
     mutationRate: float,
     tournamentSize: int,
+    eliteNumber: int = 0,
 ) -> List[List[int]]:
     
     # creating next generation 
     newPopulation = []
 
+    # elitism implementation to prevent best solutions in generation being lost to crossover/mutation
+    if eliteNumber > 0:
+        ranked_fitness = []
+
+        # sort population by fitness
+        for schedule in population:
+            fitness = evaluate_fitness(schedule, enrollment)
+            ranked_fitness.append((fitness, schedule))
+        ranked_fitness.sort()
+
+        # copy the best eliteNumber of solutions to next generation before crossover or mutation
+        for fitness, schedule in ranked_fitness[:eliteNumber]:
+            newPopulation.append(schedule[:])
+
+
     # add children until new population is same size as the old
+    # crossover/mutation only fills the non-elite slots
     while len(newPopulation) < len(population):
 
         # apply tournament selection to pick two parents
@@ -274,6 +291,7 @@ def run_island_ga(
     tournamentSize: int = 3,
     migrationInterval: int = 10,
     migrantsPerIsland: int = 1,
+    eliteNumber: int = 2,
 ) -> Tuple[List[int], int, List[int]]:
 
     # Split total population as evenly as possible across islands
@@ -288,6 +306,7 @@ def run_island_ga(
     bestSchedule = None
     bestFitness = None
 
+    # store best fitness of each generation for plot
     bestHistory = []
 
     for generation in range(generations):
@@ -300,6 +319,7 @@ def run_island_ga(
                 crossoverRate=crossoverRate,
                 mutationRate=mutationRate,
                 tournamentSize=tournamentSize,
+                eliteNumber=eliteNumber,
             )
 
             # Migrate the islands
@@ -331,35 +351,48 @@ def run_island_ga(
     Main function
 """
 def main():
-    fileName = "small-2.txt"
-    N, K, _, enrollment = read_file(fileName)
 
-    # Run island model GA
-    bestSchedule, bestFitness, bestHistory = run_island_ga(
-        N=N,
-        K=K,
-        enrollment=enrollment,
-        totalPopulationSize=40,
-        numberOfIslands=4,
-        generations=150,
-        crossoverRate=0.9,
-        mutationRate=0.1,
-        tournamentSize=3,
-        migrationInterval=10,
-        migrantsPerIsland=1,
-    )
+    iteration = 0
+    bestFitnessAvg = []
 
-    print("\nBest schedule:", bestSchedule)
-    print("Best fitness:", bestFitness)
-    print("Hard violations:", count_hard_violations(bestSchedule, enrollment))
-    print("Soft penalty:", count_soft_penalty(bestSchedule, enrollment))
+    for iteration in range(5):
 
-    plt.plot(range(1, len(bestHistory) + 1), bestHistory)
-    plt.xlabel("Generation")
-    plt.ylabel("Best fitness")
-    plt.title("Fitness over generations")
-    plt.grid(True)
-    plt.show()
+        fileName = "small-2.txt"
+        N, K, _, enrollment = read_file(fileName)
+
+        # Run island model GA
+        bestSchedule, bestFitness, bestHistory = run_island_ga(
+            N=N,
+            K=K,
+            enrollment=enrollment,
+            totalPopulationSize=40,
+            numberOfIslands=4,
+            generations=150,
+            crossoverRate=0.9,
+            mutationRate=0.1,
+            tournamentSize=3,
+            migrationInterval=10,
+            migrantsPerIsland=1,
+            eliteNumber=8,
+        )
+
+        print("\nBest schedule:", bestSchedule)
+        print("Best fitness:", bestFitness)
+        print("Hard violations:", count_hard_violations(bestSchedule, enrollment))
+        print("Soft penalty:", count_soft_penalty(bestSchedule, enrollment))
+
+        plt.plot(range(1, len(bestHistory) + 1), bestHistory)
+        plt.xlabel("Generation")
+        plt.ylabel("Best fitness")
+        plt.title("Fitness over generations")
+        plt.grid(True)
+        plt.show()
+
+        bestFitnessAvg.append(bestFitness)
+
+        iteration += 1
+
+    print("Average best fitness over 5 runs:", sum(bestFitnessAvg) / 5)
 
 
 if __name__ == "__main__":
