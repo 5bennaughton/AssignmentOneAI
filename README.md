@@ -34,3 +34,5 @@ The script prints:
 - best fitness
 - hard violations
 - soft penaltys
+- graph of fitness over generations
+- average fitness from 5 runs
